@@ -64,8 +64,14 @@ VAD_SPEECH_THRESHOLD = 0.5
 
 KWS_WINDOW_MS = 100
 KWS_WINDOW_SAMPLES = SAMPLE_RATE * KWS_WINDOW_MS // 1000  # 1600
+# Slide the 100 ms window by one 30 ms capture frame (overlapping hop).
+KWS_HOP_SAMPLES = FRAME_SAMPLES
 KWS_WAKE_THRESHOLD = 0.85
 KWS_MAX_INFERENCE_MS = 15
+# When the ONNX graph emits a class vector, which index is the wake word.
+KWS_WAKE_INDEX = 0
+# 1.0 = no smoothing (running score == last window). Lower = heavier EMA.
+KWS_SCORE_EMA_ALPHA = 1.0
 
 # MFCC / log-mel for sliding-window KWS (25 ms window, 10 ms hop)
 MFCC_N_MFCC = 40
