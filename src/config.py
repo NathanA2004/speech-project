@@ -1,6 +1,6 @@
 """Default audio, VAD/KWS, and local-disk model paths.
 
-All model loading must use these relative on-disk paths under ./models.
+All model loading must use these paths under ./models on local disk.
 No cloud APIs or remote download roots are configured here.
 """
 
@@ -10,16 +10,25 @@ from pathlib import Path
 # Project layout (resolved from this file so cwd does not matter)
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MODELS_DIR = PROJECT_ROOT / "models"
+MODELS_DIR_RELATIVE = Path("models")
+MODELS_DIR = PROJECT_ROOT / MODELS_DIR_RELATIVE
 
-KWS_DIR = MODELS_DIR / "kws"
-STT_DIR = MODELS_DIR / "stt"
-SLM_DIR = MODELS_DIR / "slm"
+KWS_DIR_RELATIVE = MODELS_DIR_RELATIVE / "kws"
+STT_DIR_RELATIVE = MODELS_DIR_RELATIVE / "stt"
+SLM_DIR_RELATIVE = MODELS_DIR_RELATIVE / "slm"
 
-KWS_MODEL_PATH = KWS_DIR / "kws_model.onnx"
-VAD_MODEL_PATH = KWS_DIR / "silero_vad.onnx"
-SLM_MODEL_PATH = SLM_DIR / "model.gguf"
-STT_DOWNLOAD_ROOT = STT_DIR  # faster-whisper local cache / model files
+KWS_MODEL_RELATIVE = KWS_DIR_RELATIVE / "kws_model.onnx"
+VAD_MODEL_RELATIVE = KWS_DIR_RELATIVE / "silero_vad.onnx"
+SLM_MODEL_RELATIVE = SLM_DIR_RELATIVE / "model.gguf"
+
+KWS_DIR = PROJECT_ROOT / KWS_DIR_RELATIVE
+STT_DIR = PROJECT_ROOT / STT_DIR_RELATIVE
+SLM_DIR = PROJECT_ROOT / SLM_DIR_RELATIVE
+
+KWS_MODEL_PATH = PROJECT_ROOT / KWS_MODEL_RELATIVE
+VAD_MODEL_PATH = PROJECT_ROOT / VAD_MODEL_RELATIVE
+SLM_MODEL_PATH = PROJECT_ROOT / SLM_MODEL_RELATIVE
+STT_DOWNLOAD_ROOT = STT_DIR  # faster-whisper local files only: ./models/stt
 
 # ---------------------------------------------------------------------------
 # Capture: 16 kHz, 16-bit, mono, 30 ms frames

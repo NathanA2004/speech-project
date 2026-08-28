@@ -1,8 +1,8 @@
 """Real-time PCM capture via sounddevice / PortAudio.
 
 Captures 30 ms frames (16 kHz, 16-bit, mono) into a thread-safe 3-second
-ring buffer. The PortAudio callback never allocates beyond a copy + enqueue
-so input overflows are counted instead of silently dropped.
+ring buffer. The PortAudio callback copies one frame and enqueues it so
+input overflows are counted instead of silently dropped.
 """
 
 from __future__ import annotations
@@ -31,11 +31,24 @@ from config import (
 
 
 def frame_rms(pcm: np.ndarray) -> float:
-    """RMS of an int16 frame, normalized to 0.0–1.0."""
+    """RMS of an int16 frame, normalized to 0.0-1.0."""
     if pcm.size == 0:
         return 0.0
     x = pcm.astype(np.float32) / 32768.0
     return float(np.sqrt(np.mean(x * x)))
+
+
+def to_int16_mono(indata: np.ndarray, n: int) -> np.ndarray:
+    """Take the first channel and convert to int16 PCM of length n."""
+    if indata.ndim > 1:
+        mono = indata[:n, 0]
+    else:
+        mono = np.asarray(indata).reshape(-1)[:n]
+    if np.issubdtype(mono.dtype, np.floating):
+        return np.clip(np.asarray(mono, dtype=np.float32) * 32767.0, -32768, 32767).astype(
+            np.int16
+        )
+    return np.asarray(mono, dtype=np.int16)
 
 
 @dataclass(frozen=True)
@@ -119,18 +132,39 @@ class AudioStreamManager:
         self._ring.clear()
         self._drain_queue()
 
-        self._stream = sd.InputStream(
-            samplerate=self.sample_rate,
-            channels=self.channels,
-            dtype=self.dtype,
-            blocksize=self.frame_samples,
-            latency=self.latency,
-            callback=self._on_audio,
-            device=self.device,
-        )
+        stream: Optional[sd.InputStream] = None
+        try:
+            stream = self._open_input_stream()
+            stream.start()
+        except Exception:
+            if stream is not None:
+                stream.close()
+            self._stream = None
+            self._running = False
+            raise
+
+        self._stream = stream
         self._t0 = time.perf_counter()
         self._running = True
-        self._stream.start()
+
+    def _open_input_stream(self) -> sd.InputStream:
+        kwargs = {
+            "samplerate": self.sample_rate,
+            "dtype": self.dtype,
+            "blocksize": self.frame_samples,
+            "latency": self.latency,
+            "callback": self._on_audio,
+            "device": self.device,
+        }
+        try:
+            return sd.InputStream(channels=self.channels, **kwargs)
+        except Exception as first:
+            info = sd.query_devices(self.device, kind="input")
+            native = int(info.get("max_input_channels") or 0)
+            if native <= self.channels:
+                raise first
+            # Some Windows arrays only open as 2/4-ch; callback keeps channel 0.
+            return sd.InputStream(channels=native, **kwargs)
 
     def stop(self) -> None:
         self._running = False
@@ -157,26 +191,18 @@ class AudioStreamManager:
         _time_info: object,
         status: sd.CallbackFlags,
     ) -> None:
-        # Keep this callback short: copy, enqueue, update counters.
-        if status.input_overflow:
-            with self._lock:
-                self._overflow_count += 1
+        overflow = bool(getattr(status, "input_overflow", False))
+        n = min(int(frames), self.frame_samples)
+        pcm = np.zeros(self.frame_samples, dtype=np.int16)
+        if n > 0:
+            pcm[:n] = to_int16_mono(indata, n)
 
-        if frames != self.frame_samples:
-            # Partial block — still copy what we got, pad to a full frame.
-            pcm = np.zeros(self.frame_samples, dtype=np.int16)
-            n = min(frames, self.frame_samples)
-            mono = indata[:n, 0] if indata.ndim > 1 else indata[:n]
-            pcm[:n] = np.asarray(mono, dtype=np.int16).reshape(-1)
-        else:
-            mono = indata[:, 0] if indata.ndim > 1 else indata.reshape(-1)
-            pcm = np.copy(np.asarray(mono, dtype=np.int16))
-
-        rms = frame_rms(pcm)
-        self._ring.append(pcm)
         with self._lock:
+            if overflow:
+                self._overflow_count += 1
+            self._ring.append(pcm)
             self._frames_captured += 1
-            self._last_rms = rms
+            self._last_rms = frame_rms(pcm)
 
         try:
             self._queue.put_nowait(pcm)
@@ -186,7 +212,8 @@ class AudioStreamManager:
 
     def snapshot_ring_buffer(self) -> np.ndarray:
         """Concatenated 3 s of recent PCM (pre-trigger context)."""
-        frames = list(self._ring)
+        with self._lock:
+            frames = list(self._ring)
         if not frames:
             return np.zeros(0, dtype=np.int16)
         return np.concatenate(frames)
@@ -221,9 +248,7 @@ class AudioStreamManager:
         """Async iterator of 30 ms int16 frames (does not block the event loop)."""
         loop = asyncio.get_running_loop()
         while True:
-            item = await loop.run_in_executor(
-                None, lambda: self._get_frame(timeout)
-            )
+            item = await loop.run_in_executor(None, self._get_frame, timeout)
             if item is None:
                 if not self._running:
                     return
