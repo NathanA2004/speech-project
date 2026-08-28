@@ -55,9 +55,28 @@ QUEUE_MAX_FRAMES = RING_BUFFER_FRAMES
 # VAD / KWS / intent (used by later modules)
 # ---------------------------------------------------------------------------
 VAD_SILENCE_TIMEOUT_S = 1.2
+# Silero VAD ONNX native window is 512 samples (32 ms) at 16 kHz. Capture
+# still uses 30 ms / 480-sample frames; LocalVADDetector zero-pads to this.
+VAD_WINDOW_SAMPLES = 512
+VAD_LSTM_LAYERS = 2
+VAD_LSTM_HIDDEN = 64  # v4 h/c; v5 uses a combined state of size 128
+VAD_SPEECH_THRESHOLD = 0.5
+
 KWS_WINDOW_MS = 100
+KWS_WINDOW_SAMPLES = SAMPLE_RATE * KWS_WINDOW_MS // 1000  # 1600
 KWS_WAKE_THRESHOLD = 0.85
 KWS_MAX_INFERENCE_MS = 15
+
+# MFCC / log-mel for sliding-window KWS (25 ms window, 10 ms hop)
+MFCC_N_MFCC = 40
+MFCC_N_MELS = 40
+MFCC_N_FFT = 512
+MFCC_WIN_MS = 25
+MFCC_HOP_MS = 10
+MFCC_WIN_LENGTH = SAMPLE_RATE * MFCC_WIN_MS // 1000  # 400
+MFCC_HOP_LENGTH = SAMPLE_RATE * MFCC_HOP_MS // 1000  # 160
+MFCC_PREEMPHASIS = 0.97
+MFCC_FRAMES_PER_KWS_WINDOW = 1 + (KWS_WINDOW_SAMPLES - MFCC_WIN_LENGTH) // MFCC_HOP_LENGTH  # 8
 SLM_N_CTX = 2048
 STT_MODEL_NAME = "base.en"
 STT_DEVICE = "cpu"
