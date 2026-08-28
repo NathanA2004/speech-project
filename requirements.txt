@@ -1,0 +1,8 @@
+sounddevice
+numpy
+onnxruntime
+faster-whisper
+llama-cpp-python
+torchaudio
+rich
+pytest
