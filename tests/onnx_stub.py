@@ -137,3 +137,49 @@ def write_silero_vad_stub(path: str | Path) -> Path:
     out = Path(path)
     out.write_bytes(model)
     return out
+
+
+def write_kws_model_stub(path: str | Path) -> Path:
+    """Write a local ONNX stub: score = clip(mean(input), 0, 1).
+
+    Input  ``input``  FLOAT [1, 40, 8]  (MFCC layout from ``extract_mfcc``)
+    Output ``output`` FLOAT [1, 1, 1]
+    """
+    FLOAT = 1
+    nodes = [
+        _node(
+            "ReduceMean",
+            ["input"],
+            ["mean"],
+            "mean",
+            [_attr_ints("axes", [1, 2]), _attr_int("keepdims", 1)],
+        ),
+        _node("Clip", ["mean", "clip_min", "clip_max"], ["output"], "clip"),
+    ]
+    initializers = [
+        _float_scalar("clip_min", 0.0),
+        _float_scalar("clip_max", 1.0),
+    ]
+    inputs = [
+        _value_info(
+            "input",
+            FLOAT,
+            [("value", 1), ("value", 40), ("value", 8)],
+        ),
+    ]
+    outputs = [
+        _value_info(
+            "output",
+            FLOAT,
+            [("value", 1), ("value", 1), ("value", 1)],
+        ),
+    ]
+    graph = _str(2, "kws_mean_stub")
+    graph += b"".join(_ld(1, n) for n in nodes)
+    graph += b"".join(_ld(5, t) for t in initializers)
+    graph += b"".join(_ld(11, i) for i in inputs)
+    graph += b"".join(_ld(12, o) for o in outputs)
+    model = _var(1, 8) + _ld(7, graph) + _ld(8, _var(2, 13))
+    out = Path(path)
+    out.write_bytes(model)
+    return out
